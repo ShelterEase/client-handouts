@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Client Handout Library</title>
+<style>
+  :root {
+    --teal: #1F6F63;
+    --teal-dark: #154A42;
+    --teal-light: #E4F2EF;
+    --gray: #555555;
+    --text: #2D2D2D;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: Georgia, 'Times New Roman', serif;
+    color: var(--text);
+    background: #FAFAFA;
+  }
+  header {
+    background: var(--teal-dark);
+    color: white;
+    padding: 40px 24px 32px;
+    text-align: center;
+  }
+  header h1 { margin: 0 0 8px; font-size: 2rem; }
+  header p { margin: 0; font-style: italic; color: #CFE6E1; font-size: 1rem; }
+  nav.top {
+    text-align: center;
+    padding: 10px;
+    background: white;
+    border-bottom: 1px solid #e2e2e2;
+    font-family: Arial, sans-serif;
+    font-size: 0.9rem;
+  }
+  nav.top a { color: var(--teal-dark); text-decoration: none; }
+  nav.top a:hover { text-decoration: underline; }
+  main {
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 32px 24px 64px;
+  }
+  #status { color: var(--gray); font-style: italic; }
+  #search {
+    width: 100%;
+    padding: 12px 14px;
+    font-size: 1rem;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    margin-bottom: 28px;
+    font-family: inherit;
+  }
+  section.category { margin-bottom: 32px; }
+  h2.category-title {
+    font-family: Arial, sans-serif;
+    font-size: 1.05rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--teal);
+    border-bottom: 2px solid var(--teal);
+    padding-bottom: 6px;
+    margin: 0 0 14px;
+  }
+  ul.list { list-style: none; margin: 0; padding: 0; }
+  li.item {
+    background: white;
+    border: 1px solid #e2e2e2;
+    border-left: 5px solid var(--teal);
+    border-radius: 6px;
+    padding: 16px 20px;
+    margin-bottom: 12px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+  li.item h3 {
+    margin: 0;
+    font-size: 1.1rem;
+    font-weight: normal;
+    color: var(--teal-dark);
+  }
+  li.item a.download {
+    flex-shrink: 0;
+    background: var(--teal);
+    color: white;
+    text-decoration: none;
+    padding: 8px 16px;
+    border-radius: 5px;
+    font-family: Arial, sans-serif;
+    font-size: 0.9rem;
+    font-weight: bold;
+  }
+  li.item a.download:hover { background: var(--teal-dark); }
+  footer {
+    text-align: center;
+    color: var(--gray);
+    font-size: 0.85rem;
+    padding: 24px;
+    font-style: italic;
+    border-top: 1px solid #e2e2e2;
+  }
+  .error {
+    background: #FDECEC;
+    border: 1px solid #E8B4B4;
+    color: #7A2E2E;
+    padding: 16px;
+    border-radius: 6px;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Client Handout Library</h1>
+  <p>Take-home guides for adopters and clients, organized by body system</p>
+</header>
+
+<nav class="top"><a href="print.html">🖨️ Select handouts to print</a></nav>
+
+<main>
+  <input type="text" id="search" placeholder="Search handouts by name...">
+  <p id="status">Loading handouts...</p>
+  <div id="categories"></div>
+</main>
+
+<footer>
+  This page updates automatically whenever a new handout is added to the "handouts" folder.
+</footer>
+
+<script>
+function getRepoInfo() {
+  const host = window.location.hostname;
+  const owner = host.split(".")[0];
+  const pathParts = window.location.pathname.split("/").filter(Boolean);
+  const repoFromPath = pathParts.length > 0 ? pathParts[0] : null;
+  return { owner, repoFromPath };
+}
+
+function titleize(filename) {
+  return filename.replace(/\.[^/.]+$/, "").replace(/[_-]+/g, " ").trim();
+}
+
+// Nicer display names for category folder names, in a preferred order.
+// Any folder not listed here still displays fine (folder name is used as-is).
+const CATEGORY_LABELS = {
+  Cardiac: "Cardiac",
+  Dermatologic: "Skin (Dermatologic)",
+  Otic: "Ear (Otic)",
+  Ocular: "Eye (Ocular)",
+  Dental: "Dental",
+  Respiratory: "Respiratory",
+  Geriatric: "Geriatric / Senior Care",
+  Orthopedic: "Orthopedic",
+};
+const CATEGORY_ORDER = ["Cardiac", "Dermatologic", "Otic", "Ocular", "Dental", "Respiratory", "Orthopedic", "Geriatric"];
+
+async function fetchJSON(url) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error("not ok");
+  return res.json();
+}
+
+async function loadHandouts() {
+  const { owner, repoFromPath } = getRepoInfo();
+  const candidates = [];
+  if (repoFromPath) candidates.push(repoFromPath);
+  candidates.push(owner + ".github.io");
+
+  const statusEl = document.getElementById("status");
+  const container = document.getElementById("categories");
+
+  for (const repo of candidates) {
+    try {
+      const topLevel = await fetchJSON(`https://api.github.com/repos/${owner}/${repo}/contents/handouts`);
+      const folders = topLevel.filter(f => f.type === "dir");
+      const looseFiles = topLevel.filter(f => f.type === "file" && /\.docx$/i.test(f.name));
+
+      const categories = {};
+
+      // Files directly in /handouts (no category yet) go under "Other"
+      if (looseFiles.length) categories["Other"] = looseFiles;
+
+      for (const folder of folders) {
+        const contents = await fetchJSON(`https://api.github.com/repos/${owner}/${repo}/contents/handouts/${folder.name}`);
+        const docs = contents.filter(f => f.type === "file" && /\.docx$/i.test(f.name));
+        if (docs.length) categories[folder.name] = docs;
+      }
+
+      const catNames = Object.keys(categories);
+      if (catNames.length === 0) {
+        statusEl.textContent = "No handouts found yet. Add files to the /handouts folder to see them here.";
+        return;
+      }
+
+      // Order known categories first, then any others alphabetically, "Other" last.
+      catNames.sort((a, b) => {
+        const ai = CATEGORY_ORDER.indexOf(a);
+        const bi = CATEGORY_ORDER.indexOf(b);
+        if (a === "Other") return 1;
+        if (b === "Other") return -1;
+        if (ai === -1 && bi === -1) return a.localeCompare(b);
+        if (ai === -1) return 1;
+        if (bi === -1) return -1;
+        return ai - bi;
+      });
+
+      catNames.forEach(cat => {
+        const docs = categories[cat].slice().sort((a, b) => titleize(a.name).localeCompare(titleize(b.name)));
+        const section = document.createElement("section");
+        section.className = "category";
+        const label = CATEGORY_LABELS[cat] || cat;
+        section.innerHTML = `<h2 class="category-title">${label}</h2>`;
+        const ul = document.createElement("ul");
+        ul.className = "list";
+        docs.forEach(doc => {
+          const li = document.createElement("li");
+          li.className = "item";
+          li.innerHTML = `
+            <h3>${titleize(doc.name)}</h3>
+            <a class="download" href="${doc.download_url}" download>Download</a>
+          `;
+          ul.appendChild(li);
+        });
+        section.appendChild(ul);
+        container.appendChild(section);
+      });
+
+      statusEl.style.display = "none";
+
+      document.getElementById("search").addEventListener("input", (e) => {
+        const q = e.target.value.toLowerCase();
+        document.querySelectorAll("section.category").forEach(section => {
+          let anyVisible = false;
+          section.querySelectorAll("li.item").forEach(li => {
+            const match = li.querySelector("h3").textContent.toLowerCase().includes(q);
+            li.style.display = match ? "flex" : "none";
+            if (match) anyVisible = true;
+          });
+          section.style.display = anyVisible ? "block" : "none";
+        });
+      });
+
+      return;
+    } catch (err) {
+      // try next candidate
+    }
+  }
+
+  statusEl.innerHTML = `<div class="error">Couldn't load the handout list. Make sure this page is published via GitHub Pages and a "handouts" folder exists in the repository.</div>`;
+}
+
+loadHandouts();
+</script>
+
+</body>
+</html>

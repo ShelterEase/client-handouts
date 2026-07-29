@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Print Handouts</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
+<style>
+  :root {
+    --teal: #1F6F63;
+    --teal-dark: #154A42;
+    --teal-light: #E4F2EF;
+    --gray: #555555;
+    --text: #2D2D2D;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: Georgia, 'Times New Roman', serif;
+    color: var(--text);
+    background: #FAFAFA;
+  }
+  header {
+    background: var(--teal-dark);
+    color: white;
+    padding: 40px 24px 32px;
+    text-align: center;
+  }
+  header h1 { margin: 0 0 8px; font-size: 2rem; }
+  header p { margin: 0; font-style: italic; color: #CFE6E1; }
+  nav.top {
+    text-align: center;
+    padding: 10px;
+    background: white;
+    border-bottom: 1px solid #e2e2e2;
+    font-family: Arial, sans-serif;
+    font-size: 0.9rem;
+  }
+  nav.top a { color: var(--teal-dark); text-decoration: none; margin: 0 10px; }
+  nav.top a:hover { text-decoration: underline; }
+  main {
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 32px 24px 120px;
+  }
+  #status { color: var(--gray); font-style: italic; }
+  .toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+    font-family: Arial, sans-serif;
+    font-size: 0.9rem;
+  }
+  .toolbar button.link {
+    background: none;
+    border: none;
+    color: var(--teal-dark);
+    text-decoration: underline;
+    cursor: pointer;
+    font-size: 0.9rem;
+    padding: 0;
+  }
+  section.category { margin-bottom: 28px; }
+  .category-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 2px solid var(--teal);
+    padding-bottom: 6px;
+    margin-bottom: 12px;
+  }
+  h2.category-title {
+    font-family: Arial, sans-serif;
+    font-size: 1.05rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--teal);
+    margin: 0;
+  }
+  .category-header button.link {
+    background: none;
+    border: none;
+    color: var(--teal-dark);
+    text-decoration: underline;
+    cursor: pointer;
+    font-family: Arial, sans-serif;
+    font-size: 0.8rem;
+    padding: 0;
+  }
+  ul.list { list-style: none; margin: 0; padding: 0; }
+  li.item {
+    background: white;
+    border: 1px solid #e2e2e2;
+    border-left: 5px solid var(--teal);
+    border-radius: 6px;
+    padding: 14px 18px;
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+  li.item input[type="checkbox"] {
+    width: 20px;
+    height: 20px;
+    accent-color: var(--teal);
+    flex-shrink: 0;
+  }
+  li.item label {
+    font-size: 1.1rem;
+    color: var(--teal-dark);
+    cursor: pointer;
+    flex: 1;
+  }
+  .bar {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: white;
+    border-top: 1px solid #ddd;
+    padding: 16px 24px;
+    text-align: center;
+    box-shadow: 0 -2px 8px rgba(0,0,0,0.06);
+  }
+  .bar button {
+    background: var(--teal);
+    color: white;
+    border: none;
+    font-family: Arial, sans-serif;
+    font-size: 1rem;
+    font-weight: bold;
+    padding: 12px 28px;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  .bar button:disabled { background: #aaa; cursor: not-allowed; }
+  .bar button:hover:not(:disabled) { background: var(--teal-dark); }
+  .bar .count {
+    font-family: Arial, sans-serif;
+    color: var(--gray);
+    font-size: 0.85rem;
+    margin-top: 6px;
+  }
+  .error {
+    background: #FDECEC;
+    border: 1px solid #E8B4B4;
+    color: #7A2E2E;
+    padding: 16px;
+    border-radius: 6px;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Print Handouts</h1>
+  <p>Select the handouts you need, then print them as one packet</p>
+</header>
+
+<nav class="top"><a href="index.html">&larr; Back to full library</a></nav>
+
+<main>
+  <div class="toolbar">
+    <span id="count-label">0 selected</span>
+    <button class="link" id="select-all">Select all</button>
+  </div>
+  <p id="status">Loading handouts...</p>
+  <div id="categories"></div>
+</main>
+
+<div class="bar">
+  <button id="print-btn" disabled>Print Selected</button>
+  <div class="count" id="bar-status"></div>
+</div>
+
+<script>
+const { PDFDocument } = PDFLib;
+
+function getRepoInfo() {
+  const host = window.location.hostname;
+  const owner = host.split(".")[0];
+  const pathParts = window.location.pathname.split("/").filter(Boolean);
+  const repoFromPath = pathParts.length > 0 ? pathParts[0] : null;
+  return { owner, repoFromPath };
+}
+
+function titleize(filename) {
+  return filename.replace(/\.[^/.]+$/, "").replace(/[_-]+/g, " ").trim();
+}
+
+const CATEGORY_LABELS = {
+  Cardiac: "Cardiac",
+  Dermatologic: "Skin (Dermatologic)",
+  Otic: "Ear (Otic)",
+  Ocular: "Eye (Ocular)",
+  Dental: "Dental",
+  Respiratory: "Respiratory",
+  Geriatric: "Geriatric / Senior Care",
+  Orthopedic: "Orthopedic",
+};
+const CATEGORY_ORDER = ["Cardiac", "Dermatologic", "Otic", "Ocular", "Dental", "Respiratory", "Orthopedic", "Geriatric"];
+
+async function fetchJSON(url) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error("not ok");
+  return res.json();
+}
+
+let checkboxCounter = 0;
+
+async function loadHandouts() {
+  const { owner, repoFromPath } = getRepoInfo();
+  const candidates = [];
+  if (repoFromPath) candidates.push(repoFromPath);
+  candidates.push(owner + ".github.io");
+
+  const statusEl = document.getElementById("status");
+  const container = document.getElementById("categories");
+
+  for (const repo of candidates) {
+    try {
+      const topLevel = await fetchJSON(`https://api.github.com/repos/${owner}/${repo}/contents/handouts`);
+      const folders = topLevel.filter(f => f.type === "dir");
+      const looseFiles = topLevel.filter(f => f.type === "file" && /\.pdf$/i.test(f.name));
+
+      const categories = {};
+      if (looseFiles.length) categories["Other"] = looseFiles;
+
+      for (const folder of folders) {
+        const contents = await fetchJSON(`https://api.github.com/repos/${owner}/${repo}/contents/handouts/${folder.name}`);
+        const pdfs = contents.filter(f => f.type === "file" && /\.pdf$/i.test(f.name));
+        if (pdfs.length) categories[folder.name] = pdfs;
+      }
+
+      const catNames = Object.keys(categories);
+      if (catNames.length === 0) {
+        statusEl.textContent = "No printable (PDF) handouts found in the handouts folder yet.";
+        return;
+      }
+
+      catNames.sort((a, b) => {
+        const ai = CATEGORY_ORDER.indexOf(a);
+        const bi = CATEGORY_ORDER.indexOf(b);
+        if (a === "Other") return 1;
+        if (b === "Other") return -1;
+        if (ai === -1 && bi === -1) return a.localeCompare(b);
+        if (ai === -1) return 1;
+        if (bi === -1) return -1;
+        return ai - bi;
+      });
+
+      catNames.forEach(cat => {
+        const docs = categories[cat].slice().sort((a, b) => titleize(a.name).localeCompare(titleize(b.name)));
+        const section = document.createElement("section");
+        section.className = "category";
+        const label = CATEGORY_LABELS[cat] || cat;
+        const sectionId = `cat-${cat.replace(/\W+/g, "-")}`;
+        section.id = sectionId;
+        section.innerHTML = `
+          <div class="category-header">
+            <h2 class="category-title">${label}</h2>
+            <button class="link" data-select-cat="${sectionId}">Select all in section</button>
+          </div>
+        `;
+        const ul = document.createElement("ul");
+        ul.className = "list";
+        docs.forEach(doc => {
+          const id = `chk-${checkboxCounter++}`;
+          const li = document.createElement("li");
+          li.className = "item";
+          li.innerHTML = `
+            <input type="checkbox" id="${id}" data-url="${doc.download_url}" data-title="${titleize(doc.name)}">
+            <label for="${id}">${titleize(doc.name)}</label>
+          `;
+          ul.appendChild(li);
+        });
+        section.appendChild(ul);
+        container.appendChild(section);
+      });
+
+      statusEl.style.display = "none";
+      wireUpControls();
+      return;
+    } catch (err) {
+      // try next candidate
+    }
+  }
+
+  statusEl.innerHTML = `<div class="error">Couldn't load the handout list. Make sure this page is published via GitHub Pages and a "handouts" folder with PDF files exists in the repository.</div>`;
+}
+
+function wireUpControls() {
+  const checkboxes = () => Array.from(document.querySelectorAll('input[type="checkbox"]'));
+  const printBtn = document.getElementById("print-btn");
+  const countLabel = document.getElementById("count-label");
+  const barStatus = document.getElementById("bar-status");
+
+  function updateCount() {
+    const checked = checkboxes().filter(c => c.checked).length;
+    countLabel.textContent = `${checked} selected`;
+    printBtn.disabled = checked === 0;
+  }
+
+  checkboxes().forEach(c => c.addEventListener("change", updateCount));
+
+  document.getElementById("select-all").addEventListener("click", () => {
+    const boxes = checkboxes();
+    const allChecked = boxes.every(c => c.checked);
+    boxes.forEach(c => (c.checked = !allChecked));
+    updateCount();
+  });
+
+  document.querySelectorAll("button[data-select-cat]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const section = document.getElementById(btn.dataset.selectCat);
+      const boxes = Array.from(section.querySelectorAll('input[type="checkbox"]'));
+      const allChecked = boxes.every(c => c.checked);
+      boxes.forEach(c => (c.checked = !allChecked));
+      updateCount();
+    });
+  });
+
+  printBtn.addEventListener("click", async () => {
+    const selected = checkboxes().filter(c => c.checked);
+    if (selected.length === 0) return;
+
+    printBtn.disabled = true;
+    printBtn.textContent = "Preparing...";
+    barStatus.textContent = "";
+
+    try {
+      const merged = await PDFDocument.create();
+
+      for (const chk of selected) {
+        barStatus.textContent = `Adding: ${chk.dataset.title}...`;
+        const bytes = await fetch(chk.dataset.url).then(r => r.arrayBuffer());
+        const src = await PDFDocument.load(bytes);
+        const pages = await merged.copyPages(src, src.getPageIndices());
+        pages.forEach(p => merged.addPage(p));
+      }
+
+      const mergedBytes = await merged.save();
+      const blob = new Blob([mergedBytes], { type: "application/pdf" });
+      const url = URL.createObjectURL(blob);
+
+      const win = window.open(url, "_blank");
+      if (win) {
+        win.addEventListener("load", () => {
+          setTimeout(() => win.print(), 400);
+        });
+      } else {
+        barStatus.textContent = "Pop-up blocked - allow pop-ups for this site, then try again.";
+      }
+    } catch (err) {
+      barStatus.textContent = "Something went wrong preparing the PDF. Please try again.";
+      console.error(err);
+    } finally {
+      printBtn.disabled = false;
+      printBtn.textContent = "Print Selected";
+    }
+  });
+
+  updateCount();
+}
+
+loadHandouts();
+</script>
+
+</body>
+</html>
