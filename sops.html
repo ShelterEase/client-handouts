@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SOPs</title>
+<style>
+  :root {
+    --teal: #1F6F63;
+    --teal-dark: #154A42;
+    --teal-light: #E4F2EF;
+    --gray: #555555;
+    --text: #2D2D2D;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: Georgia, 'Times New Roman', serif;
+    color: var(--text);
+    background: #FAFAFA;
+  }
+  header {
+    background: var(--teal-dark);
+    color: white;
+    padding: 40px 24px 32px;
+    text-align: center;
+  }
+  header h1 { margin: 0 0 8px; font-size: 2rem; }
+  header p { margin: 0; font-style: italic; color: #CFE6E1; font-size: 1rem; }
+  nav.top {
+    text-align: center;
+    padding: 10px;
+    background: white;
+    border-bottom: 1px solid #e2e2e2;
+    font-family: Arial, sans-serif;
+    font-size: 0.9rem;
+  }
+  nav.top a { color: var(--teal-dark); text-decoration: none; }
+  nav.top a:hover { text-decoration: underline; }
+  main {
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 32px 24px 64px;
+  }
+  #status { color: var(--gray); font-style: italic; }
+  #search {
+    width: 100%;
+    padding: 12px 14px;
+    font-size: 1rem;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    margin-bottom: 28px;
+    font-family: inherit;
+  }
+  section.category { margin-bottom: 32px; }
+  h2.category-title {
+    font-family: Arial, sans-serif;
+    font-size: 1.05rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--teal);
+    border-bottom: 2px solid var(--teal);
+    padding-bottom: 6px;
+    margin: 0 0 14px;
+  }
+  ul.list { list-style: none; margin: 0; padding: 0; }
+  li.item {
+    background: white;
+    border: 1px solid #e2e2e2;
+    border-left: 5px solid var(--teal);
+    border-radius: 6px;
+    padding: 16px 20px;
+    margin-bottom: 12px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+  li.item h3 {
+    margin: 0;
+    font-size: 1.1rem;
+    font-weight: normal;
+    color: var(--teal-dark);
+  }
+  li.item .actions {
+    display: flex;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+  li.item a.view {
+    background: white;
+    color: var(--teal-dark);
+    border: 1.5px solid var(--teal);
+    text-decoration: none;
+    padding: 7px 14px;
+    border-radius: 5px;
+    font-family: Arial, sans-serif;
+    font-size: 0.9rem;
+    font-weight: bold;
+  }
+  li.item a.view:hover { background: var(--teal-light); }
+  li.item a.download {
+    flex-shrink: 0;
+    background: var(--teal);
+    color: white;
+    text-decoration: none;
+    padding: 8px 16px;
+    border-radius: 5px;
+    font-family: Arial, sans-serif;
+    font-size: 0.9rem;
+    font-weight: bold;
+  }
+  li.item a.download:hover { background: var(--teal-dark); }
+  footer {
+    text-align: center;
+    color: var(--gray);
+    font-size: 0.85rem;
+    padding: 24px;
+    font-style: italic;
+    border-top: 1px solid #e2e2e2;
+  }
+  .error {
+    background: #FDECEC;
+    border: 1px solid #E8B4B4;
+    color: #7A2E2E;
+    padding: 16px;
+    border-radius: 6px;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>SOPs</h1>
+  <p>Standard operating procedures for medical and shelter protocols</p>
+</header>
+
+<nav class="top"><a href="index.html">&larr; Back to Resource Library</a></nav>
+
+<main>
+  <input type="text" id="search" placeholder="Search by name...">
+  <p id="status">Loading files...</p>
+  <div id="categories"></div>
+</main>
+
+<footer>
+  This page updates automatically whenever a new file is added to the "sops" folder.
+</footer>
+
+<script>
+const FOLDER = "sops";
+
+function getRepoInfo() {
+  const host = window.location.hostname;
+  const owner = host.split(".")[0];
+  const pathParts = window.location.pathname.split("/").filter(Boolean);
+  const repoFromPath = pathParts.length > 0 ? pathParts[0] : null;
+  return { owner, repoFromPath };
+}
+
+function titleize(filename) {
+  return filename.replace(/\.[^/.]+$/, "").replace(/[_-]+/g, " ").trim();
+}
+
+// GitHub can preview PDFs inline, but not Word/Office files. For those,
+// route through Microsoft's Office viewer so "View" actually shows content.
+function getViewUrl(file) {
+  if (/\.pdf$/i.test(file.name)) {
+    return file.html_url;
+  }
+  if (/\.(docx?|xlsx?|pptx?)$/i.test(file.name)) {
+    return "https://view.officeapps.live.com/op/view.aspx?src=" + encodeURIComponent(file.download_url);
+  }
+  return file.html_url;
+}
+
+function labelize(folderName) {
+  return folderName.replace(/[_-]+/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+}
+
+async function fetchJSON(url) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error("not ok");
+  return res.json();
+}
+
+async function loadFiles() {
+  const { owner, repoFromPath } = getRepoInfo();
+  const candidates = [];
+  if (repoFromPath) candidates.push(repoFromPath);
+  candidates.push(owner + ".github.io");
+
+  const statusEl = document.getElementById("status");
+  const container = document.getElementById("categories");
+
+  for (const repo of candidates) {
+    try {
+      const topLevel = await fetchJSON(`https://api.github.com/repos/${owner}/${repo}/contents/${FOLDER}`);
+      const subFolders = topLevel.filter(f => f.type === "dir");
+      const looseFiles = topLevel.filter(f => f.type === "file" && !/^\./.test(f.name) && f.name.toLowerCase() !== "placeholder.md");
+
+      const groups = {};
+      if (looseFiles.length) groups["All Files"] = looseFiles;
+
+      for (const sub of subFolders) {
+        const contents = await fetchJSON(`https://api.github.com/repos/${owner}/${repo}/contents/${FOLDER}/${sub.name}`);
+        const files = contents.filter(f => f.type === "file" && !/^\./.test(f.name) && f.name.toLowerCase() !== "placeholder.md");
+        if (files.length) groups[sub.name] = files;
+      }
+
+      const groupNames = Object.keys(groups);
+      if (groupNames.length === 0) {
+        statusEl.textContent = "No files found yet. Add files to the \"" + FOLDER + "\" folder to see them here.";
+        return;
+      }
+
+      groupNames.sort((a, b) => {
+        if (a === "All Files") return -1;
+        if (b === "All Files") return 1;
+        return a.localeCompare(b);
+      });
+
+      groupNames.forEach(group => {
+        const files = groups[group].slice().sort((a, b) => titleize(a.name).localeCompare(titleize(b.name)));
+        const section = document.createElement("section");
+        section.className = "category";
+        const label = group === "All Files" ? "All Files" : labelize(group);
+        section.innerHTML = `<h2 class="category-title">${label}</h2>`;
+        const ul = document.createElement("ul");
+        ul.className = "list";
+        files.forEach(file => {
+          const li = document.createElement("li");
+          li.className = "item";
+          li.innerHTML = `
+            <h3>${titleize(file.name)}</h3>
+            <div class="actions">
+              <a class="view" href="${getViewUrl(file)}" target="_blank" rel="noopener">View</a>
+              <a class="download" href="${file.download_url}" download>Download</a>
+            </div>
+          `;
+          ul.appendChild(li);
+        });
+        section.appendChild(ul);
+        container.appendChild(section);
+      });
+
+      statusEl.style.display = "none";
+
+      document.getElementById("search").addEventListener("input", (e) => {
+        const q = e.target.value.toLowerCase();
+        document.querySelectorAll("section.category").forEach(section => {
+          let anyVisible = false;
+          section.querySelectorAll("li.item").forEach(li => {
+            const match = li.querySelector("h3").textContent.toLowerCase().includes(q);
+            li.style.display = match ? "flex" : "none";
+            if (match) anyVisible = true;
+          });
+          section.style.display = anyVisible ? "block" : "none";
+        });
+      });
+
+      return;
+    } catch (err) {
+      // try next candidate
+    }
+  }
+
+  statusEl.innerHTML = '<div class="error">Couldn\'t load the file list. Make sure this page is published via GitHub Pages and a "' + FOLDER + '" folder exists in the repository.</div>';
+}
+
+loadFiles();
+</script>
+
+</body>
+</html>
