@@ -164,6 +164,22 @@ async function fetchJSON(url) {
   return res.json();
 }
 
+// Given a folder's file listing, return one entry per handout: prefer the
+// .docx if it exists, otherwise fall back to the .pdf (for PDF-only handouts).
+function pickDisplayFiles(files) {
+  const byBaseName = {};
+  files
+    .filter(f => f.type === "file" && /\.(docx|pdf)$/i.test(f.name))
+    .forEach(f => {
+      const base = f.name.replace(/\.[^/.]+$/, "");
+      const isDocx = /\.docx$/i.test(f.name);
+      if (!byBaseName[base] || isDocx) {
+        byBaseName[base] = f;
+      }
+    });
+  return Object.values(byBaseName);
+}
+
 async function loadHandouts() {
   const { owner, repoFromPath } = getRepoInfo();
   const candidates = [];
@@ -177,7 +193,7 @@ async function loadHandouts() {
     try {
       const topLevel = await fetchJSON(`https://api.github.com/repos/${owner}/${repo}/contents/handouts`);
       const folders = topLevel.filter(f => f.type === "dir");
-      const looseFiles = topLevel.filter(f => f.type === "file" && /\.docx$/i.test(f.name));
+      const looseFiles = pickDisplayFiles(topLevel);
 
       const categories = {};
 
@@ -186,7 +202,7 @@ async function loadHandouts() {
 
       for (const folder of folders) {
         const contents = await fetchJSON(`https://api.github.com/repos/${owner}/${repo}/contents/handouts/${folder.name}`);
-        const docs = contents.filter(f => f.type === "file" && /\.docx$/i.test(f.name));
+        const docs = pickDisplayFiles(contents);
         if (docs.length) categories[folder.name] = docs;
       }
 
