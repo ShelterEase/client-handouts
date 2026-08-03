@@ -193,20 +193,31 @@ async function fetchJSON(url) {
   return res.json();
 }
 
-// Given a folder's file listing, return one entry per handout: prefer the
-// .docx if it exists, otherwise fall back to the .pdf (for PDF-only handouts).
+// Given a folder's file listing, return one entry per handout. The docx (if
+// present) is used for the title/Download link, since it's the editable
+// format. But for Viewing, the PDF sibling is always preferred when one
+// exists, since GitHub previews PDFs natively and instantly \u2014 routing a
+// docx through the Office web viewer is slow, so we avoid that whenever a
+// PDF version is available.
 function pickDisplayFiles(files) {
   const byBaseName = {};
   files
     .filter(f => f.type === "file" && /\.(docx|pdf)$/i.test(f.name))
     .forEach(f => {
       const base = f.name.replace(/\.[^/.]+$/, "");
-      const isDocx = /\.docx$/i.test(f.name);
-      if (!byBaseName[base] || isDocx) {
-        byBaseName[base] = f;
-      }
+      if (!byBaseName[base]) byBaseName[base] = {};
+      if (/\.docx$/i.test(f.name)) byBaseName[base].docx = f;
+      else byBaseName[base].pdf = f;
     });
-  return Object.values(byBaseName);
+  return Object.values(byBaseName).map(entry => {
+    const primary = entry.docx || entry.pdf;
+    const viewFile = entry.pdf || entry.docx;
+    return {
+      name: primary.name,
+      download_url: primary.download_url,
+      viewUrl: getViewUrl(viewFile),
+    };
+  });
 }
 
 async function loadHandouts() {
@@ -267,7 +278,7 @@ async function loadHandouts() {
           li.innerHTML = `
             <h3>${titleize(doc.name)}</h3>
             <div class="actions">
-              <a class="view" href="${getViewUrl(doc)}" target="_blank" rel="noopener">View</a>
+              <a class="view" href="${doc.viewUrl}" target="_blank" rel="noopener">View</a>
               <a class="download" href="${doc.download_url}" download>Download</a>
             </div>
           `;
