@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Print Handouts</title>
+<title>Print Charts</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
 <style>
   :root {
@@ -149,23 +149,33 @@
     padding: 16px;
     border-radius: 6px;
   }
+  .note {
+    background: var(--teal-light);
+    border-radius: 6px;
+    padding: 12px 16px;
+    font-family: Arial, sans-serif;
+    font-size: 0.85rem;
+    color: var(--teal-dark);
+    margin-bottom: 20px;
+  }
 </style>
 </head>
 <body>
 
 <header>
-  <h1>Print Handouts</h1>
-  <p>Select the handouts you need, then print them as one packet</p>
+  <h1>Print Charts</h1>
+  <p>Select the files you need, then print them as one packet</p>
 </header>
 
-<nav class="top"><a href="index.html">&larr; Resource Library</a> &nbsp;|&nbsp; <a href="handouts-library.html">&larr; Back to full library</a></nav>
+<nav class="top"><a href="index.html">&larr; Resource Library</a> &nbsp;|&nbsp; <a href="charts.html">&larr; Back to Charts</a></nav>
 
 <main>
+  <div class="note">Only PDF files can be selected here — this tool combines PDFs into one print job. Word documents need a PDF version added alongside them to show up on this page.</div>
   <div class="toolbar">
     <span id="count-label">0 selected</span>
     <button class="link" id="select-all">Select all</button>
   </div>
-  <p id="status">Loading handouts...</p>
+  <p id="status">Loading files...</p>
   <div id="categories"></div>
 </main>
 
@@ -176,6 +186,7 @@
 
 <script>
 const { PDFDocument } = PDFLib;
+const FOLDER = "charts";
 
 function getRepoInfo() {
   const host = window.location.hostname;
@@ -189,17 +200,9 @@ function titleize(filename) {
   return filename.replace(/\.[^/.]+$/, "").replace(/[_-]+/g, " ").trim();
 }
 
-const CATEGORY_LABELS = {
-  Cardiac: "Cardiac",
-  Dermatologic: "Skin (Dermatologic)",
-  Otic: "Ear (Otic)",
-  Ocular: "Eye (Ocular)",
-  Dental: "Dental",
-  Respiratory: "Respiratory",
-  Geriatric: "Geriatric / Senior Care",
-  Orthopedic: "Orthopedic",
-};
-const CATEGORY_ORDER = ["Cardiac", "Dermatologic", "Otic", "Ocular", "Dental", "Respiratory", "Orthopedic", "Geriatric"];
+function labelize(folderName) {
+  return folderName.replace(/[_-]+/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+}
 
 async function fetchJSON(url) {
   const res = await fetch(url);
@@ -209,7 +212,7 @@ async function fetchJSON(url) {
 
 let checkboxCounter = 0;
 
-async function loadHandouts() {
+async function loadFiles() {
   const { owner, repoFromPath } = getRepoInfo();
   const candidates = [];
   if (repoFromPath) candidates.push(repoFromPath);
@@ -220,42 +223,37 @@ async function loadHandouts() {
 
   for (const repo of candidates) {
     try {
-      const topLevel = await fetchJSON(`https://api.github.com/repos/${owner}/${repo}/contents/handouts`);
-      const folders = topLevel.filter(f => f.type === "dir");
+      const topLevel = await fetchJSON(`https://api.github.com/repos/${owner}/${repo}/contents/${FOLDER}`);
+      const subFolders = topLevel.filter(f => f.type === "dir");
       const looseFiles = topLevel.filter(f => f.type === "file" && /\.pdf$/i.test(f.name));
 
-      const categories = {};
-      if (looseFiles.length) categories["Other"] = looseFiles;
+      const groups = {};
+      if (looseFiles.length) groups["All Files"] = looseFiles;
 
-      for (const folder of folders) {
-        const contents = await fetchJSON(`https://api.github.com/repos/${owner}/${repo}/contents/handouts/${folder.name}`);
+      for (const sub of subFolders) {
+        const contents = await fetchJSON(`https://api.github.com/repos/${owner}/${repo}/contents/${FOLDER}/${sub.name}`);
         const pdfs = contents.filter(f => f.type === "file" && /\.pdf$/i.test(f.name));
-        if (pdfs.length) categories[folder.name] = pdfs;
+        if (pdfs.length) groups[sub.name] = pdfs;
       }
 
-      const catNames = Object.keys(categories);
-      if (catNames.length === 0) {
-        statusEl.textContent = "No printable (PDF) handouts found in the handouts folder yet.";
+      const groupNames = Object.keys(groups);
+      if (groupNames.length === 0) {
+        statusEl.textContent = "No printable (PDF) files found in the \"" + FOLDER + "\" folder yet.";
         return;
       }
 
-      catNames.sort((a, b) => {
-        const ai = CATEGORY_ORDER.indexOf(a);
-        const bi = CATEGORY_ORDER.indexOf(b);
-        if (a === "Other") return 1;
-        if (b === "Other") return -1;
-        if (ai === -1 && bi === -1) return a.localeCompare(b);
-        if (ai === -1) return 1;
-        if (bi === -1) return -1;
-        return ai - bi;
+      groupNames.sort((a, b) => {
+        if (a === "All Files") return -1;
+        if (b === "All Files") return 1;
+        return a.localeCompare(b);
       });
 
-      catNames.forEach(cat => {
-        const docs = categories[cat].slice().sort((a, b) => titleize(a.name).localeCompare(titleize(b.name)));
+      groupNames.forEach(group => {
+        const files = groups[group].slice().sort((a, b) => titleize(a.name).localeCompare(titleize(b.name)));
         const section = document.createElement("section");
         section.className = "category";
-        const label = CATEGORY_LABELS[cat] || cat;
-        const sectionId = `cat-${cat.replace(/\W+/g, "-")}`;
+        const label = group === "All Files" ? "All Files" : labelize(group);
+        const sectionId = `cat-${group.replace(/\W+/g, "-")}`;
         section.id = sectionId;
         section.innerHTML = `
           <div class="category-header">
@@ -265,13 +263,13 @@ async function loadHandouts() {
         `;
         const ul = document.createElement("ul");
         ul.className = "list";
-        docs.forEach(doc => {
+        files.forEach(file => {
           const id = `chk-${checkboxCounter++}`;
           const li = document.createElement("li");
           li.className = "item";
           li.innerHTML = `
-            <input type="checkbox" id="${id}" data-url="${doc.download_url}" data-title="${titleize(doc.name)}">
-            <label for="${id}">${titleize(doc.name)}</label>
+            <input type="checkbox" id="${id}" data-url="${file.download_url}" data-title="${titleize(file.name)}">
+            <label for="${id}">${titleize(file.name)}</label>
           `;
           ul.appendChild(li);
         });
@@ -287,7 +285,7 @@ async function loadHandouts() {
     }
   }
 
-  statusEl.innerHTML = `<div class="error">Couldn't load the handout list. Make sure this page is published via GitHub Pages and a "handouts" folder with PDF files exists in the repository.</div>`;
+  statusEl.innerHTML = '<div class="error">Couldn\'t load the file list. Make sure this page is published via GitHub Pages and a "' + FOLDER + '" folder exists in the repository.</div>';
 }
 
 function wireUpControls() {
@@ -364,7 +362,7 @@ function wireUpControls() {
   updateCount();
 }
 
-loadHandouts();
+loadFiles();
 </script>
 
 </body>

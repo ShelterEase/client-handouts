@@ -83,23 +83,6 @@
     font-weight: normal;
     color: var(--teal-dark);
   }
-  li.item .actions {
-    display: flex;
-    gap: 8px;
-    flex-shrink: 0;
-  }
-  li.item a.view {
-    background: white;
-    color: var(--teal-dark);
-    border: 1.5px solid var(--teal);
-    text-decoration: none;
-    padding: 7px 14px;
-    border-radius: 5px;
-    font-family: Arial, sans-serif;
-    font-size: 0.9rem;
-    font-weight: bold;
-  }
-  li.item a.view:hover { background: var(--teal-light); }
   li.item a.download {
     flex-shrink: 0;
     background: var(--teal);
@@ -161,18 +144,6 @@ function titleize(filename) {
   return filename.replace(/\.[^/.]+$/, "").replace(/[_-]+/g, " ").trim();
 }
 
-// GitHub can preview PDFs inline, but not Word/Office files. For those,
-// route through Microsoft's Office viewer so "View" actually shows content.
-function getViewUrl(file) {
-  if (/\.pdf$/i.test(file.name)) {
-    return file.html_url;
-  }
-  if (/\.(docx?|xlsx?|pptx?)$/i.test(file.name)) {
-    return "https://view.officeapps.live.com/op/view.aspx?src=" + encodeURIComponent(file.download_url);
-  }
-  return file.html_url;
-}
-
 // Nicer display names for category folder names, in a preferred order.
 // Any folder not listed here still displays fine (folder name is used as-is).
 const CATEGORY_LABELS = {
@@ -193,31 +164,20 @@ async function fetchJSON(url) {
   return res.json();
 }
 
-// Given a folder's file listing, return one entry per handout. The docx (if
-// present) is used for the title/Download link, since it's the editable
-// format. But for Viewing, the PDF sibling is always preferred when one
-// exists, since GitHub previews PDFs natively and instantly \u2014 routing a
-// docx through the Office web viewer is slow, so we avoid that whenever a
-// PDF version is available.
+// Given a folder's file listing, return one entry per handout: prefer the
+// .docx if it exists, otherwise fall back to the .pdf (for PDF-only handouts).
 function pickDisplayFiles(files) {
   const byBaseName = {};
   files
     .filter(f => f.type === "file" && /\.(docx|pdf)$/i.test(f.name))
     .forEach(f => {
       const base = f.name.replace(/\.[^/.]+$/, "");
-      if (!byBaseName[base]) byBaseName[base] = {};
-      if (/\.docx$/i.test(f.name)) byBaseName[base].docx = f;
-      else byBaseName[base].pdf = f;
+      const isDocx = /\.docx$/i.test(f.name);
+      if (!byBaseName[base] || isDocx) {
+        byBaseName[base] = f;
+      }
     });
-  return Object.values(byBaseName).map(entry => {
-    const primary = entry.docx || entry.pdf;
-    const viewFile = entry.pdf || entry.docx;
-    return {
-      name: primary.name,
-      download_url: primary.download_url,
-      viewUrl: getViewUrl(viewFile),
-    };
-  });
+  return Object.values(byBaseName);
 }
 
 async function loadHandouts() {
@@ -277,10 +237,7 @@ async function loadHandouts() {
           li.className = "item";
           li.innerHTML = `
             <h3>${titleize(doc.name)}</h3>
-            <div class="actions">
-              <a class="view" href="${doc.viewUrl}" target="_blank" rel="noopener">View</a>
-              <a class="download" href="${doc.download_url}" download>Download</a>
-            </div>
+            <a class="download" href="${doc.download_url}" download>Download</a>
           `;
           ul.appendChild(li);
         });
